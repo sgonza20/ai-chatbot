@@ -34,7 +34,7 @@ var (
 
 func main() {
 	if modelID == "" {
-		log.Fatal("MODEL_ID environment variable is required")
+		modelID = "arn:aws:bedrock:us-east-1:949940714686:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0"
 	}
 	if region == "" {
 		region = "us-east-1"

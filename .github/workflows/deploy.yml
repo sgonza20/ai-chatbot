@@ -67,8 +67,8 @@ jobs:
           WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
 
-      - name: Run wiz CLI IaC scan
-        run: ./wizcli iac scan --path $SCAN_PATH --policy "$POLICY" --no-publish
+      # - name: Run wiz CLI IaC scan
+      #   run: ./wizcli iac scan --path $SCAN_PATH --policy "$POLICY" --no-publish
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'

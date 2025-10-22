@@ -166,7 +166,7 @@ resource "aws_ecs_task_definition" "chatbot_task" {
       ]
       portMappings = [
         {
-          containerPort = 8080 # Port your Go app listens on
+          containerPort = 8080
           hostPort      = 8080
         }
       ]
