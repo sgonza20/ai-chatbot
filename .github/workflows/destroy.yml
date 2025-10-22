@@ -1,0 +1,38 @@
+name: Terrafrom Destroy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ROLE_ARN: arn:aws:iam::949940714686:role/github-actions-cicd
+  TERRAFORM_VERSION: 1.10.0
+
+jobs:
+    validate-and-scan:
+        name: Terrafrom Destroy
+        runs-on: ubuntu-latest
+        steps:
+          - name: Checkout code
+            uses: actions/checkout@v3
+
+          - name: Configure AWS credentials
+            uses: aws-actions/configure-aws-credentials@v2
+            with:
+              role-to-assume: ${{ env.AWS_ROLE_ARN }}
+              aws-region: ${{ env.AWS_REGION }}
+
+          - name: Set up Terraform
+            uses: hashicorp/setup-terraform@v2
+            with:
+              terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+          - name: Terraform Init
+            run: terraform -chdir=envs/dev init
+
+          - name: Terraform Destroy
+            run: terraform -chdir=envs/dev destroy -auto-approve
