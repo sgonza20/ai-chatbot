@@ -154,6 +154,16 @@ resource "aws_ecs_task_definition" "chatbot_task" {
       cpu       = 256
       memory    = 512
       essential = true
+      environment = [
+        {
+          name  = "MODEL_ID"
+          value = "arn:aws:bedrock:us-east-1:949940714686:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0"
+        },
+        {
+          name  = "AWS_REGION"
+          value = "us-east-1"
+        }
+      ]
       portMappings = [
         {
           containerPort = 8080 # Port your Go app listens on
