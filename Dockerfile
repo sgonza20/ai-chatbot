@@ -1,9 +1,9 @@
 # Stage 1: Build the Go application
 FROM golang:1.22-alpine AS builder
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
 COPY . .
+RUN go mod download
+
 
 # CGO_ENABLED=0 is important for creating statically linked binaries
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix nocgo -o chatbot-app .
