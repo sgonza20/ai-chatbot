@@ -145,8 +145,8 @@ resource "aws_ecs_task_definition" "chatbot_task" {
   network_mode             = "awsvpc"
   cpu                      = 256
   memory                   = 512
-  # Reference the new IAM role
   execution_role_arn       = aws_iam_role.ecs_execution_role.arn
+  task_role_arn            = aws_iam_role.ecs_task_role.arn
   container_definitions = jsonencode([
     {
       name      = "golang-chatbot-container"
@@ -194,4 +194,49 @@ resource "aws_ecs_service" "chatbot_service" {
     security_groups  = [aws_security_group.allow_http.id]
     assign_public_ip = true
   }
+}
+
+# IAM Role for ECS Task (application permissions)
+resource "aws_iam_role" "ecs_task_role" {
+  name = "golang-chatbot-task-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+# Policy: Allow calling Bedrock models
+resource "aws_iam_role_policy" "ecs_task_policy" {
+  name = "golang-chatbot-task-policy"
+  role = aws_iam_role.ecs_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "sts:AssumeRole"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
 }
