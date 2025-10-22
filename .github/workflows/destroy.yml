@@ -32,7 +32,9 @@ jobs:
               terraform_version: ${{ env.TERRAFORM_VERSION }}
 
           - name: Terraform Init
-            run: terraform -chdir=envs/dev init
+            run: terraform init
+            working-directory: ./terraform
 
           - name: Terraform Destroy
-            run: terraform -chdir=envs/dev destroy -auto-approve
+            run: terraform destroy -auto-approve
+            working-directory: ./terraform
