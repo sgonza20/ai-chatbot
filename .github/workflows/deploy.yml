@@ -81,7 +81,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }} 
         run: |
-          IMAGE_URI=$ECR_REGISTRY/$ECR_REPO_NAME:$IMAGE_TAG
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPO_NAME:latest
           echo "Building and pushing $IMAGE_URI"
           docker build -t $IMAGE_URI .
           docker push $IMAGE_URI
