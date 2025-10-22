@@ -10,8 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	bedrock "github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 type ChatRequest struct {
@@ -30,6 +33,7 @@ var (
 	}{}
 	modelID = os.Getenv("MODEL_ID")
 	region  = os.Getenv("AWS_REGION")
+	roleArn = os.Getenv("ASSUME_ROLE_ARN")
 )
 
 func main() {
@@ -39,11 +43,24 @@ func main() {
 	if region == "" {
 		region = "us-east-1"
 	}
+	if roleArn == "" {
+		log.Fatal("ASSUME_ROLE_ARN environment variable is required")
+	}
 
 	ctx := context.Background()
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+
+	baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
-		log.Fatalf("unable to load aws config: %v", err)
+		log.Fatalf("unable to load base AWS config: %v", err)
+	}
+
+	// Use STS to assume the provided role
+	stsClient := sts.NewFromConfig(baseCfg)
+	creds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
+
+	cfg := aws.Config{
+		Region:      region,
+		Credentials: aws.NewCredentialsCache(creds),
 	}
 
 	br := bedrock.NewFromConfig(cfg)

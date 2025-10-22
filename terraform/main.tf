@@ -162,6 +162,10 @@ resource "aws_ecs_task_definition" "chatbot_task" {
         {
           name  = "AWS_REGION"
           value = "us-east-1"
+        },
+        {
+            name = "ASSUME_ROLE_ARN"
+            value = "arn:aws:iam::949940714686:role/golang-chatbot-ecs-execution-role"
         }
       ]
       portMappings = [
