@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -15,33 +14,23 @@ import (
 	bedrock "github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 )
 
-// Request/Response shapes for our HTTP API
 type ChatRequest struct {
-	SessionID string `json:"session_id"`
-	Message   string `json:"message"`
+	Message string `json:"message"`
 }
 
-type ChatResponse struct {
-	SessionID string `json:"session_id"`
-	Reply     string `json:"reply"`
-}
-
-var (
-	modelID = os.Getenv("MODEL_ID") // e.g. "anthropic.claude-3-opus-20240229-v1:0"
-	region  = os.Getenv("AWS_REGION")
-)
-
-// very small in-memory conversation store (sessionID -> []messages)
-// For production: replace with DynamoDB/Redis/whatever.
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-var store = struct {
-	sync.RWMutex
-	m map[string][]Message
-}{m: map[string][]Message{}}
+var (
+	store = struct {
+		sync.RWMutex
+		m []Message
+	}{}
+	modelID = os.Getenv("MODEL_ID")
+	region  = os.Getenv("AWS_REGION")
+)
 
 func main() {
 	if modelID == "" {
@@ -57,11 +46,10 @@ func main() {
 		log.Fatalf("unable to load aws config: %v", err)
 	}
 
-	// Bedrock Runtime client
 	br := bedrock.NewFromConfig(cfg)
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "ok")
+		w.Write([]byte("ok"))
 	})
 
 	http.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
@@ -69,20 +57,18 @@ func main() {
 			http.Error(w, "only POST", http.StatusMethodNotAllowed)
 			return
 		}
+
 		var cr ChatRequest
 		if err := json.NewDecoder(r.Body).Decode(&cr); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		// append user message to session history
+
 		store.Lock()
-		history := store.m[cr.SessionID]
-		history = append(history, Message{Role: "user", Content: cr.Message})
-		store.m[cr.SessionID] = history
+		store.m = append(store.m, Message{Role: "user", Content: cr.Message})
 		store.Unlock()
 
-		// Build the Anthropic "messages" payload expected by Claude Messages API
-		// Each message is {"role": "user" | "assistant" | "system", "content":[{"type":"text","text":"..."}]}
+		// Build Anthropic messages format
 		type contentBlock struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
@@ -93,7 +79,7 @@ func main() {
 		}
 		var messagesPayload []inMessage
 		store.RLock()
-		for _, m := range store.m[cr.SessionID] {
+		for _, m := range store.m {
 			messagesPayload = append(messagesPayload, inMessage{
 				Role:    m.Role,
 				Content: []contentBlock{{Type: "text", Text: m.Content}},
@@ -101,24 +87,20 @@ func main() {
 		}
 		store.RUnlock()
 
-		// Build request body (JSON) that Bedrock's InvokeModel expects for Anthropic Messages API
 		reqBody := map[string]interface{}{
-			"messages": messagesPayload,
-			// You can tune other parameters (max_tokens, temperature, etc.) per model docs
+			"messages":          messagesPayload,
 			"max_tokens":        1024,
-			"anthropic_version": "bedrock-2023-05-31",
 			"temperature":       0.3,
+			"anthropic_version": "bedrock-2023-05-31",
 		}
 		b, _ := json.Marshal(reqBody)
 
-		// Call Bedrock Runtime InvokeModel
 		input := &bedrock.InvokeModelInput{
 			Body:        b,
 			ModelId:     &modelID,
 			ContentType: awsString("application/json"),
 		}
 
-		// non-streaming call (simpler). For streaming use InvokeModelWithResponseStream.
 		out, err := br.InvokeModel(r.Context(), input)
 		if err != nil {
 			log.Printf("InvokeModel error: %v", err)
@@ -126,36 +108,27 @@ func main() {
 			return
 		}
 
-		// Output from bedrock: Body is an io.ReadCloser-like []byte. We'll parse it expecting JSON.
-		respBytes := out.Body
-		// The response body is model-specific; for Claude Messages it typically returns a JSON message structure.
 		var parsed map[string]interface{}
-		if err := json.Unmarshal(respBytes, &parsed); err != nil {
-			// fallback: return raw text
-			reply := string(respBytes)
-			// append assistant reply to history
-			store.Lock()
-			store.m[cr.SessionID] = append(store.m[cr.SessionID], Message{Role: "assistant", Content: reply})
-			store.Unlock()
-
-			writeJSON(w, ChatResponse{SessionID: cr.SessionID, Reply: reply})
+		if err := json.Unmarshal(out.Body, &parsed); err != nil {
+			log.Printf("failed to parse model response: %v", err)
+			http.Error(w, "failed to parse model response", http.StatusInternalServerError)
 			return
 		}
 
-		// Try to extract the assistant text from common keys:
+		// 🔍 Log the full model response for debugging
+		log.Printf("Raw model response: %s", string(out.Body))
+
 		assistantText := extractAssistantText(parsed)
 		if assistantText == "" {
-			// fallback to marshalled full response
-			bs, _ := json.Marshal(parsed)
-			assistantText = string(bs)
+			assistantText = "(no text returned)"
 		}
 
-		// update history with model reply
 		store.Lock()
-		store.m[cr.SessionID] = append(store.m[cr.SessionID], Message{Role: "assistant", Content: assistantText})
+		store.m = append(store.m, Message{Role: "assistant", Content: assistantText})
 		store.Unlock()
 
-		writeJSON(w, ChatResponse{SessionID: cr.SessionID, Reply: assistantText})
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte(assistantText))
 	})
 
 	port := os.Getenv("PORT")
@@ -167,27 +140,23 @@ func main() {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 120 * time.Second,
 	}
+
 	log.Printf("listening on %s (model=%s region=%s)", srv.Addr, modelID, region)
 	log.Fatal(srv.ListenAndServe())
 }
 
-// helper functions
+func awsString(s string) *string { return &s }
 
-func writeJSON(w http.ResponseWriter, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func awsString(s string) *string {
-	return &s
-}
-
-// extractAssistantText tries common response shapes for Claude messages output
+// ✅ Updated to handle Claude 3.x, 3.5, and 4.x formats
 func extractAssistantText(parsed map[string]interface{}) string {
-	// Common shape: {"choices":[{"message":{"content":[{"type":"text","text":"..."}]}}]}
+	// Claude 3.5+ often returns "output_text"
+	if text, ok := parsed["output_text"].(string); ok && text != "" {
+		return text
+	}
+
+	// Claude 3.x / Anthropic standard message format
 	if choices, ok := parsed["choices"].([]interface{}); ok && len(choices) > 0 {
 		if c0, ok := choices[0].(map[string]interface{}); ok {
-			// try .message.content[0].text
 			if msg, ok := c0["message"].(map[string]interface{}); ok {
 				if content, ok := msg["content"].([]interface{}); ok && len(content) > 0 {
 					if cb, ok := content[0].(map[string]interface{}); ok {
@@ -197,22 +166,20 @@ func extractAssistantText(parsed map[string]interface{}) string {
 					}
 				}
 			}
-			// try .text
 			if t, ok := c0["text"].(string); ok {
 				return t
 			}
 		}
 	}
-	// Try top-level "message" with content
-	if msg, ok := parsed["message"].(map[string]interface{}); ok {
-		if content, ok := msg["content"].([]interface{}); ok && len(content) > 0 {
-			if cb, ok := content[0].(map[string]interface{}); ok {
-				if t, ok := cb["text"].(string); ok {
-					return t
-				}
+
+	// Claude 4.x or unknown fallback: "content" array directly at top-level
+	if content, ok := parsed["content"].([]interface{}); ok && len(content) > 0 {
+		if cb, ok := content[0].(map[string]interface{}); ok {
+			if t, ok := cb["text"].(string); ok {
+				return t
 			}
 		}
 	}
-	// fail: return empty
+
 	return ""
 }

@@ -121,6 +121,7 @@ resource "aws_security_group" "allow_http" {
 resource "aws_ecr_repository" "chatbot_repo" {
   name                 = "golang-chatbot-repo"
   image_tag_mutability = "MUTABLE"
+  force_delete = true
 
   image_scanning_configuration {
     scan_on_push = true
