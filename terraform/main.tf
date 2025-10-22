@@ -9,6 +9,33 @@ resource "aws_vpc" "main" {
   }
 }
 
+resource "aws_cloudwatch_log_group" "chatbot" {
+  name              = "/ecs/golang-chatbot"
+  retention_in_days = 7
+}
+
+resource "aws_iam_policy" "cw_logs_policy" {
+  name = "ECSCloudWatchLogsPolicy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:log-group:/ecs/golang-chatbot:*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_exec_attach_cw" {
+  role       = aws_iam_role.ecs_execution_role.name
+  policy_arn = aws_iam_policy.cw_logs_policy.arn
+}
+
 # Internet Gateway for public access
 resource "aws_internet_gateway" "gw" {
   vpc_id = aws_vpc.main.id
@@ -164,6 +191,14 @@ resource "aws_ecs_task_definition" "chatbot_task" {
           value = "us-east-1"
         }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+            "awslogs-group"         = "/ecs/golang-chatbot"
+            "awslogs-region"        = "us-east-1"
+            "awslogs-stream-prefix" = "golang-chatbot"
+        }
+      }
       portMappings = [
         {
           containerPort = 8080
