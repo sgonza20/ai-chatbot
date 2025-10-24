@@ -17,7 +17,7 @@ env:
   ECR_REPO_NAME: golang-chatbot-repo
   AWS_ROLE_ARN: arn:aws:iam::949940714686:role/github-actions-cicd
   SCAN_PATH: "./terraform"
-  POLICY: "Default IaC policy"
+  POLICY: "Default vulnerabilities policy"
 
 jobs:
   terraform_deploy:
