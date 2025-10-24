@@ -67,52 +67,61 @@ jobs:
           WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
 
-      # - name: Run wiz CLI IaC scan
-      #   run: ./wizcli iac scan --path $SCAN_PATH --policy "$POLICY" --no-publish
+      - name: Run wiz CLI IaC scan
+        run: ./wizcli dir scan --path $SCAN_PATH --policy "$POLICY"
 
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve
-        working-directory: ./terraform
+      # - name: Terraform Apply
+      #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      #   run: terraform apply -auto-approve
+      #   working-directory: ./terraform
   
-  app_deploy:
-    name: Application Deploy
-    runs-on: ubuntu-latest
-    needs: terraform_deploy
+  # app_deploy:
+  #   name: Application Deploy
+  #   runs-on: ubuntu-latest
+  #   needs: terraform_deploy
     
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ env.AWS_ROLE_ARN }}
+  #         aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+  #     - name: Login to Amazon ECR
+  #       id: login-ecr
+  #       uses: aws-actions/amazon-ecr-login@v2
         
-      - name: Build, tag, and push image to Amazon ECR
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }} 
-        run: |
-          IMAGE_URI=$ECR_REGISTRY/$ECR_REPO_NAME:latest
-          echo "Building and pushing $IMAGE_URI"
-          docker build -t $IMAGE_URI .
-          docker push $IMAGE_URI
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV # Store URI for next step
+  #     - name: Build, tag, and push image to Amazon ECR
+  #       env:
+  #         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+  #         IMAGE_TAG: ${{ github.sha }} 
+  #       run: |
+  #         IMAGE_URI=$ECR_REGISTRY/$ECR_REPO_NAME:latest
+  #         echo "Building and pushing $IMAGE_URI"
+  #         docker build -t $IMAGE_URI .
+  #         docker push $IMAGE_URI
+  #         echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV # Store URI for next step
 
-      - name: Deploy to Amazon ECS Service
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          # You must have a base task definition file checked in OR dynamically retrieve one.
-          # We'll retrieve the latest active task definition to ensure we have the correct settings.
-          task-definition: golang-chatbot-task
-          service: ${{ env.ECS_SERVICE }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          container-name: ${{ env.ECS_CONTAINER_NAME }}
-          image: ${{ env.IMAGE_URI }}
-          wait-for-service-stability: true
+  #     - name: Get latest task definition
+  #       id: get-task-def
+  #       run: |
+  #         TASK_DEF_ARN=$(aws ecs describe-task-definition \
+  #           --task-definition golang-chatbot-task \
+  #           --query 'taskDefinition.taskDefinitionArn' \
+  #           --output text)
+  #         echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
+
+  #     - name: Deploy to Amazon ECS Service
+  #       uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+  #       with:
+  #         # You must have a base task definition file checked in OR dynamically retrieve one.
+  #         # We'll retrieve the latest active task definition to ensure we have the correct settings.
+  #         task-definition: ${{ env.TASK_DEF_ARN }}
+  #         service: ${{ env.ECS_SERVICE }}
+  #         cluster: ${{ env.ECS_CLUSTER }}
+  #         container-name: ${{ env.ECS_CONTAINER_NAME }}
+  #         image: ${{ env.IMAGE_URI }}
+  #         wait-for-service-stability: true
