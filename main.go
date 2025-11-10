@@ -117,6 +117,7 @@ func main() {
 
 		// 🔍 Log the full model response for debugging
 		log.Printf("Raw model response: %s", string(out.Body))
+		log.Println("Testing SAST")
 
 		assistantText := extractAssistantText(parsed)
 		if assistantText == "" {
