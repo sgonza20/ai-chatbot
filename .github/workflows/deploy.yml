@@ -57,6 +57,7 @@ jobs:
           workspace: test-workspace
           message: "Run triggered by GitHub Actions (commit: ${{ github.sha }})"
           type: plan
+          terraform_root: ./terraform
 
       - name: Download Wiz CLI
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
