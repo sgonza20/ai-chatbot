@@ -64,7 +64,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: ./wizcli dir scan --path $SCAN_PATH --policy "$POLICY"
 
-      - name: Trigger Terraform Plan
+      - name: Trigger Terraform Run (Plan or Apply)
         uses: kvrhdn/tfe-run@v1
         with:
           token: ${{ secrets.TF_API_TOKEN }}
