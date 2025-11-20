@@ -21,6 +21,7 @@ env:
   AWS_ROLE_ARN: arn:aws:iam::949940714686:role/github-actions-cicd
   SCAN_PATH: "./terraform"
   POLICY: "Default vulnerabilities policy"
+  TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
 
 jobs:
   terraform_deploy:
