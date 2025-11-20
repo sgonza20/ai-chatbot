@@ -49,16 +49,6 @@ jobs:
         with:
           terraform_version: 1.10.0
 
-      - name: Trigger Terraform Cloud Run
-        uses: kvrhdn/tfe-run@v1
-        with:
-          token: ${{ secrets.TF_API_TOKEN }}
-          organization: samlozano
-          workspace: test-workspace
-          message: "Run triggered by GitHub Actions (commit: ${{ github.sha }})"
-          type: plan
-          terraform_root: ./terraform
-
       - name: Download Wiz CLI
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: curl -o wizcli https://downloads.wiz.io/wizcli/latest/wizcli-linux-amd64 && chmod +x wizcli
@@ -74,10 +64,16 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: ./wizcli dir scan --path $SCAN_PATH --policy "$POLICY"
 
-      - name: Terraform Apply
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: terraform apply -auto-approve
-        working-directory: ./terraform
+      - name: Trigger Terraform Plan
+        uses: kvrhdn/tfe-run@v1
+        with:
+          token: ${{ secrets.TF_API_TOKEN }}
+          organization: samlozano
+          workspace: test-workspace
+          message: "Run triggered by GitHub Actions (commit: ${{ github.sha }})"
+          type: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && 'apply' || 'plan' }}
+          terraform_root: ./terraform
+
   
   app_deploy:
     name: Application Deploy
