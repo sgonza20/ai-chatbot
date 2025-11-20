@@ -53,7 +53,7 @@ jobs:
         uses: kvrhdn/tfe-run@v1
         with:
           token: ${{ secrets.TF_API_TOKEN }}
-          organization: your-terraform-cloud-organization-name
+          organization: samlozano
           workspace: test-workspace
           message: "Run triggered by GitHub Actions (commit: ${{ github.sha }})"
           type: plan
