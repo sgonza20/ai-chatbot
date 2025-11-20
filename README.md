@@ -81,8 +81,7 @@ The chatbot exposes a simple **RESTful API**.
 
 | Method | Endpoint | Description | Request Body Example |
 | :--- | :--- | :--- | :--- |
-| **POST** | `/api/chat/message` | Sends a message to the chatbot and gets a response. | `{"user_id": "123", "message": "What is Golang?"}` |
-| **GET** | `/api/chat/history/{user_id}` | Retrieves the conversation history for a specific user. | *N/A* |
+| **POST** | `/chat/` | Sends a message to the chatbot and gets a response. | `{"user_id": "123", "message": "What is Golang?"}` |
 | **GET** | `/health` | Simple health check. | *N/A* |
 
 ---
@@ -110,3 +109,12 @@ Distributed under the **MIT License**. See `LICENSE` for more information.
 Your Name - [Your Email Address]
 
 Project Link: [https://github.com/yourusername/your-repo-name](https://github.com/yourusername/your-repo-name)
+curl -X POST http://localhost:8080/chat -H "Content-Type: application/json" -d '{"message":""}'
+
+### **Local Testing**
+```
+docker run -e MODEL_ID="arn:aws:bedrock:us-east-1:949940714686:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0" -e AWS_PROFILE=sam -e AWS_REGION=us-east-1 -v ~/.aws:/root/.aws:ro -p 8080:8080 bedrock-bot:latest
+```
+```
+curl -X POST http://localhost:8080/chat -H "Content-Type: application/json" -d '{"message":""}'
+```
