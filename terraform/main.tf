@@ -94,9 +94,9 @@ resource "aws_route_table_association" "public_b" {
 data "aws_region" "current" {}
 
 # Output the subnet IDs for use in the ECS service
-output "public_subnet_ids" {
-  value = [aws_subnet.public_a.id, aws_subnet.public_b.id]
-}
+# output "public_subnet_ids" {
+#   value = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+# }
 
 # IAM Policy Document for the Task Execution Role trust relationship
 data "aws_iam_policy_document" "ecs_assume_role_policy" {
@@ -155,10 +155,10 @@ resource "aws_ecr_repository" "chatbot_repo" {
   }
 }
 
-output "ecr_repository_url" {
-  description = "The URL of the ECR repository"
-  value       = aws_ecr_repository.chatbot_repo.repository_url
-}
+# output "ecr_repository_url" {
+#   description = "The URL of the ECR repository"
+#   value       = aws_ecr_repository.chatbot_repo.repository_url
+# }
 
 # 2. ECS Cluster
 resource "aws_ecs_cluster" "chatbot_cluster" {
