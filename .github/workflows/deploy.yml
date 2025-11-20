@@ -49,20 +49,14 @@ jobs:
         with:
           terraform_version: 1.10.0
 
-      - name: Terraform Init
-        id: init
-        run: terraform init
-        working-directory: ./terraform
-
-      - name: Terraform Validate
-        id: validate
-        run: terraform validate
-        working-directory: ./terraform
-
-      - name: Terraform Plan
-        id: plan
-        run: terraform plan -no-color
-        working-directory: ./terraform
+      - name: Trigger Terraform Cloud Run
+        uses: kvrhdn/tfe-run@v1
+        with:
+          token: ${{ secrets.TF_API_TOKEN }}
+          organization: your-terraform-cloud-organization-name
+          workspace: test-workspace
+          message: "Run triggered by GitHub Actions (commit: ${{ github.sha }})"
+          type: plan
 
       - name: Download Wiz CLI
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
