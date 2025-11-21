@@ -9,6 +9,15 @@ resource "aws_vpc" "main" {
   }
 }
 
+# --- ALB Certificate Variable ---
+variable "alb_cert_arn" {
+  description = "The ARN of the ACM certificate for HTTPS termination."
+  type        = string
+  # IMPORTANT: Replace this with your actual ACM certificate ARN!
+  default     = "arn:aws:acm:us-east-1:949940714686:certificate/48e6dda0-a1f8-449d-99dc-81c740cc58d9"
+}
+# --------------------------------
+
 resource "aws_cloudwatch_log_group" "chatbot" {
   name              = "/ecs/golang-chatbot"
   retention_in_days = 7
@@ -93,11 +102,6 @@ resource "aws_route_table_association" "public_b" {
 # Data source to get current region for AZs
 data "aws_region" "current" {}
 
-# Output the subnet IDs for use in the ECS service
-# output "public_subnet_ids" {
-#   value = [aws_subnet.public_a.id, aws_subnet.public_b.id]
-# }
-
 # IAM Policy Document for the Task Execution Role trust relationship
 data "aws_iam_policy_document" "ecs_assume_role_policy" {
   statement {
@@ -121,26 +125,93 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_attach" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Security Group to allow inbound traffic on the Go application's port
-resource "aws_security_group" "allow_http" {
+# --- ALB SECURITY GROUP (Allows HTTPS from the internet) ---
+resource "aws_security_group" "alb_sg" {
   vpc_id = aws_vpc.main.id
-  name   = "golang-chatbot-sg"
-  description = "Allow inbound traffic on the chatbot port"
+  name   = "golang-chatbot-alb-sg"
 
-  # Inbound rule: Allow TCP traffic on port 8080 from the internet
+  # Ingress rule: Allow HTTPS traffic from anywhere
   ingress {
-    from_port   = 8080
-    to_port     = 8080
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Outbound rule: Allow all outbound traffic (default)
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# --- TASK SECURITY GROUP (Allows traffic ONLY from the ALB) ---
+resource "aws_security_group" "allow_http" {
+  vpc_id = aws_vpc.main.id
+  name   = "golang-chatbot-sg"
+  description = "Allow inbound traffic from ALB only"
+
+  # Inbound rule: Allow TCP traffic on port 8080 (Go app port) from the ALB Security Group
+  ingress {
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+
+  # Outbound rule: Allow all outbound traffic (Fargate needs this for Bedrock/ECR)
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# --- APPLICATION LOAD BALANCER (ALB) ---
+resource "aws_lb" "chatbot_alb" {
+  name               = "golang-chatbot-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id] 
+  enable_deletion_protection = false
+
+  tags = {
+    Name = "GolangChatbotALB"
+  }
+}
+
+# --- ALB TARGET GROUP (Routes traffic to ECS tasks) ---
+resource "aws_lb_target_group" "chatbot_tg" {
+  name        = "golang-chatbot-tg"
+  port        = 8080 
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    path                = "/health" 
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+}
+
+# --- ALB LISTENER (Handles HTTPS traffic) ---
+resource "aws_lb_listener" "https_listener" {
+  load_balancer_arn = aws_lb.chatbot_alb.arn
+  port              = 443
+  protocol          = "HTTPS"
+  certificate_arn   = var.alb_cert_arn 
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.chatbot_tg.arn
   }
 }
 
@@ -154,11 +225,6 @@ resource "aws_ecr_repository" "chatbot_repo" {
     scan_on_push = true
   }
 }
-
-# output "ecr_repository_url" {
-#   description = "The URL of the ECR repository"
-#   value       = aws_ecr_repository.chatbot_repo.repository_url
-# }
 
 # 2. ECS Cluster
 resource "aws_ecs_cluster" "chatbot_cluster" {
@@ -209,7 +275,7 @@ resource "aws_ecs_task_definition" "chatbot_task" {
   ])
 }
 
-# 4. ECS Service (Fargate)
+# 4. ECS Service (Fargate) - Now attached to the ALB
 resource "aws_ecs_service" "chatbot_service" {
   name            = "golang-chatbot-service"
   cluster         = aws_ecs_cluster.chatbot_cluster.id
@@ -217,12 +283,17 @@ resource "aws_ecs_service" "chatbot_service" {
   desired_count   = 1
   launch_type     = "FARGATE"
   
-  # Use the VPC Subnets and Security Group defined above
+  # New block to integrate with the Load Balancer
+  load_balancer {
+    target_group_arn = aws_lb_target_group.chatbot_tg.arn # Reference the new Target Group
+    container_name   = "golang-chatbot-container" 
+    container_port   = 8080                       
+  }
+
   network_configuration {
-    # Use the public subnet IDs defined in section 1
     subnets          = [aws_subnet.public_a.id, aws_subnet.public_b.id]
-    # Use the security group defined in section 3
-    security_groups  = [aws_security_group.allow_http.id]
+    # Use the security group that restricts traffic to ALB only
+    security_groups  = [aws_security_group.allow_http.id] 
     assign_public_ip = true
   }
 }
@@ -270,4 +341,10 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
       }
     ]
   })
+}
+
+#--- ALB DNS Name Output ---
+output "alb_dns_name" {
+  description = "The DNS name of the Application Load Balancer"
+  value       = aws_lb.chatbot_alb.dns_name
 }
