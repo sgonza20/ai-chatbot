@@ -119,7 +119,7 @@ jobs:
 
       - name: Deploy to Amazon ECS Service
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1.5.0
         with:
           task-definition: ${{ env.TASK_DEF_ARN }}
           service: ${{ env.ECS_SERVICE }}
