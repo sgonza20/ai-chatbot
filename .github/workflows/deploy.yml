@@ -75,55 +75,78 @@ jobs:
           terraform_root: ./terraform
 
   
-  app_deploy:
-    name: Application Deploy
-    runs-on: ubuntu-latest
-    needs: terraform_deploy
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+app_deploy:
+  name: Application Deploy
+  runs-on: ubuntu-latest
+  needs: terraform_deploy
+  
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ env.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: aws-actions/amazon-ecr-login@v2
-        
-      - name: Build, tag, and push image to Amazon ECR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }} 
-        run: |
-          IMAGE_URI=$ECR_REGISTRY/$ECR_REPO_NAME:latest
-          echo "Building and pushing $IMAGE_URI"
-          docker build -t $IMAGE_URI .
-          docker push $IMAGE_URI
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV # Store URI for next step
+    - name: Login to Amazon ECR
+      id: login-ecr
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Get latest task definition
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: get-task-def
-        run: |
-          TASK_DEF_ARN=$(aws ecs describe-task-definition \
-            --task-definition golang-chatbot-task \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-          echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
+    - name: Build, tag, and push image to ECR
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        IMAGE_URI=$ECR_REGISTRY/$ECR_REPO_NAME:$IMAGE_TAG
+        echo "Building and pushing image $IMAGE_URI"
+        docker build -t $IMAGE_URI .
+        docker push $IMAGE_URI
+        echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
-      - name: Deploy to Amazon ECS Service
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ${{ env.TASK_DEF_ARN }}
-          service: ${{ env.ECS_SERVICE }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          container-name: ${{ env.ECS_CONTAINER_NAME }}
-          image: ${{ env.IMAGE_URI }}
-          wait-for-service-stability: true
+    - name: Get current task definition JSON
+      id: task-def
+      run: |
+        aws ecs describe-task-definition \
+          --task-definition golang-chatbot-task \
+          --query 'taskDefinition' \
+          > task-def.json
+
+    - name: Render new task definition with updated image
+      id: new-task-def
+      run: |
+        CONTAINER_NAME="${{ env.ECS_CONTAINER_NAME }}"
+        IMAGE="${{ env.IMAGE_URI }}"
+
+        jq --arg name "$CONTAINER_NAME" --arg image "$IMAGE" '
+          .containerDefinitions = (
+            .containerDefinitions |
+            map(
+              if .name == $name then
+                .image = $image
+              else
+                .
+              end
+            )
+          )
+        ' task-def.json > new-task-def.json
+
+    - name: Register updated task definition
+      id: register-task-def
+      run: |
+        NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --cli-input-json file://new-task-def.json \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+        echo "NEW_TASK_DEF_ARN=$NEW_TASK_DEF_ARN" >> $GITHUB_ENV
+
+    - name: Deploy to ECS
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+      with:
+        task-definition: ${{ env.NEW_TASK_DEF_ARN }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true
