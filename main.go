@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -14,8 +13,15 @@ import (
 	bedrock "github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 )
 
+// --- Structs for Chat State and API Communication ---
+
 type ChatRequest struct {
-	Message string `json:"message"`
+	Message string `json:"message"` // Matches the key sent by the frontend
+}
+
+// ChatResponse is what the frontend expects back
+type ChatResponse struct {
+	Response string `json:"response"`
 }
 
 type Message struct {
@@ -32,8 +38,34 @@ var (
 	region  = os.Getenv("AWS_REGION")
 )
 
+// --- CORS Middleware ---
+
+// corsMiddleware wraps an HTTP handler and adds necessary CORS headers.
+// IMPORTANT: In production, replace "*" with the exact domain of your CloudFront frontend URL
+// (e.g., "https://d1234.cloudfront.net")
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow requests from all origins during development/testing.
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+
+		// Handle preflight OPTIONS request required by browsers before a POST
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Pass the request to the next handler
+		next.ServeHTTP(w, r)
+	})
+}
+
+// --- Main Application Logic ---
+
 func main() {
 	if modelID == "" {
+		// Example model ID for Claude Sonnet 3.5
 		modelID = "arn:aws:bedrock:us-east-1:949940714686:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0"
 	}
 	if region == "" {
@@ -48,11 +80,16 @@ func main() {
 
 	br := bedrock.NewFromConfig(cfg)
 
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Create a new ServeMux to define routes
+	chatMux := http.NewServeMux()
+
+	// 1. Health check handler
+	chatMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
 
-	http.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
+	// 2. Chat handler (API Endpoint)
+	chatMux.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "only POST", http.StatusMethodNotAllowed)
 			return
@@ -115,7 +152,6 @@ func main() {
 			return
 		}
 
-		// 🔍 Log the full model response for debugging
 		log.Printf("Raw model response: %s", string(out.Body))
 		log.Println("Testing SAST")
 
@@ -128,9 +164,21 @@ func main() {
 		store.m = append(store.m, Message{Role: "assistant", Content: assistantText})
 		store.Unlock()
 
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte(assistantText))
+		// --- RESPONSE FORMAT FIX: Respond with JSON as expected by the React frontend ---
+		resp := ChatResponse{Response: assistantText}
+		respB, err := json.Marshal(resp)
+		if err != nil {
+			http.Error(w, "internal response error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(respB)
 	})
+
+	// Apply the CORS middleware to the entire router
+	handlerWithCORS := corsMiddleware(chatMux)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -140,6 +188,7 @@ func main() {
 		Addr:         ":" + port,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 120 * time.Second,
+		Handler:      handlerWithCORS, // Use the wrapped handler
 	}
 
 	log.Printf("listening on %s (model=%s region=%s)", srv.Addr, modelID, region)
