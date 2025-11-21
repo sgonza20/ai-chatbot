@@ -114,7 +114,23 @@ func main() {
 			Role    string         `json:"role"`
 			Content []contentBlock `json:"content"`
 		}
-		var messagesPayload []inMessage
+
+		// Inject system message with current date
+		currentDate := time.Now().Format("Monday, January 2, 2006")
+
+		messagesPayload := []inMessage{
+			{
+				Role: "system",
+				Content: []contentBlock{
+					{
+						Type: "text",
+						Text: "You are an AI assistant. Today's date is " + currentDate + ". Use this date when answering time-based questions and point of time info.",
+					},
+				},
+			},
+		}
+
+		// Add chat history
 		store.RLock()
 		for _, m := range store.m {
 			messagesPayload = append(messagesPayload, inMessage{
