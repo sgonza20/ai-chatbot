@@ -9,14 +9,11 @@ resource "aws_vpc" "main" {
   }
 }
 
-# --- ALB Certificate Variable ---
 variable "alb_cert_arn" {
   description = "The ARN of the ACM certificate for HTTPS termination."
   type        = string
-  # IMPORTANT: Replace this with your actual ACM certificate ARN!
   default     = "arn:aws:acm:us-east-1:949940714686:certificate/48e6dda0-a1f8-449d-99dc-81c740cc58d9"
 }
-# --------------------------------
 
 resource "aws_cloudwatch_log_group" "chatbot" {
   name              = "/ecs/golang-chatbot"

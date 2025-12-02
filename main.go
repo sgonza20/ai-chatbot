@@ -13,13 +13,10 @@ import (
 	bedrock "github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 )
 
-// --- Structs for Chat State and API Communication ---
-
 type ChatRequest struct {
-	Message string `json:"message"` // Matches the key sent by the frontend
+	Message string `json:"message"`
 }
 
-// ChatResponse is what the frontend expects back
 type ChatResponse struct {
 	Response string `json:"response"`
 }
@@ -38,34 +35,24 @@ var (
 	region  = os.Getenv("AWS_REGION")
 )
 
-// --- CORS Middleware ---
-
-// corsMiddleware wraps an HTTP handler and adds necessary CORS headers.
-// IMPORTANT: In production, replace "*" with the exact domain of your CloudFront frontend URL
-// (e.g., "https://d1234.cloudfront.net")
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Allow requests from all origins during development/testing.
+
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
 
-		// Handle preflight OPTIONS request required by browsers before a POST
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
-		// Pass the request to the next handler
 		next.ServeHTTP(w, r)
 	})
 }
 
-// --- Main Application Logic ---
-
 func main() {
 	if modelID == "" {
-		// Example model ID for Claude Sonnet 3.5
 		modelID = "arn:aws:bedrock:us-east-1:949940714686:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0"
 	}
 	if region == "" {
@@ -80,15 +67,12 @@ func main() {
 
 	br := bedrock.NewFromConfig(cfg)
 
-	// Create a new ServeMux to define routes
 	chatMux := http.NewServeMux()
 
-	// 1. Health check handler
 	chatMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
 
-	// 2. Chat handler (API Endpoint)
 	chatMux.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "only POST", http.StatusMethodNotAllowed)
@@ -105,7 +89,6 @@ func main() {
 		store.m = append(store.m, Message{Role: "user", Content: cr.Message})
 		store.Unlock()
 
-		// Build Anthropic messages format
 		type contentBlock struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
@@ -164,7 +147,6 @@ func main() {
 		store.m = append(store.m, Message{Role: "assistant", Content: assistantText})
 		store.Unlock()
 
-		// --- RESPONSE FORMAT FIX: Respond with JSON as expected by the React frontend ---
 		resp := ChatResponse{Response: assistantText}
 		respB, err := json.Marshal(resp)
 		if err != nil {
@@ -177,7 +159,6 @@ func main() {
 		_, _ = w.Write(respB)
 	})
 
-	// Apply the CORS middleware to the entire router
 	handlerWithCORS := corsMiddleware(chatMux)
 
 	port := os.Getenv("PORT")
@@ -188,7 +169,7 @@ func main() {
 		Addr:         ":" + port,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 120 * time.Second,
-		Handler:      handlerWithCORS, // Use the wrapped handler
+		Handler:      handlerWithCORS,
 	}
 
 	log.Printf("listening on %s (model=%s region=%s)", srv.Addr, modelID, region)
@@ -197,14 +178,11 @@ func main() {
 
 func awsString(s string) *string { return &s }
 
-// ✅ Updated to handle Claude 3.x, 3.5, and 4.x formats
 func extractAssistantText(parsed map[string]interface{}) string {
-	// Claude 3.5+ often returns "output_text"
 	if text, ok := parsed["output_text"].(string); ok && text != "" {
 		return text
 	}
 
-	// Claude 3.x / Anthropic standard message format
 	if choices, ok := parsed["choices"].([]interface{}); ok && len(choices) > 0 {
 		if c0, ok := choices[0].(map[string]interface{}); ok {
 			if msg, ok := c0["message"].(map[string]interface{}); ok {
@@ -222,7 +200,6 @@ func extractAssistantText(parsed map[string]interface{}) string {
 		}
 	}
 
-	// Claude 4.x or unknown fallback: "content" array directly at top-level
 	if content, ok := parsed["content"].([]interface{}); ok && len(content) > 0 {
 		if cb, ok := content[0].(map[string]interface{}); ok {
 			if t, ok := cb["text"].(string); ok {

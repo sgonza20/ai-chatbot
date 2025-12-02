@@ -1,120 +1,234 @@
-## 🤖 AI Chatbot (Go & AWS)
+## 🤖 Go Chatbot Full-Stack Deployment (AWS Fargate, CloudFront, Terraform)
 
----
+------------------------------------------------------------------------
 
 ### **Overview**
 
-This repository hosts the source code for a powerful, high-performance **AI Chatbot** application. Built primarily with **Go (Golang)** for speed and efficiency, the service is designed for scalability and reliability, leveraging the robust infrastructure of **Amazon Web Services (AWS)**.
+This repository contains the full-stack infrastructure and code for a
+high-performance, real-time **AI chatbot application**.\
+The frontend is built with **React**, delivered globally via **AWS
+CloudFront**, and the backend is a **Golang API** deployed on **AWS
+Fargate (ECS)**. The entire system is fully automated using
+**Terraform** and **GitHub Actions**.
 
-The chatbot provides **real-time conversational capabilities**, powered by advanced language models, and is ready for integration into various platforms.
+All traffic is encrypted end-to-end with **HTTPS**, ensuring secure,
+reliable communication between the React UI and the Go backend hosted
+at:
 
----
+    https://api.samlozano.com/chat
+
+------------------------------------------------------------------------
 
 ### **✨ Key Features**
 
-* **⚡ High Performance:** Developed in Go for fast execution and low latency.
-* **☁️ Cloud Native:** Fully containerized and optimized for deployment on AWS (e.g., EC2, ECS, or Lambda).
-* **🛠️ Modular Design:** Easy to extend and integrate with different AI models or external services.
-* **📈 Scalable:** Designed to handle a high volume of concurrent user requests.
+-   **⚡ Real-time AI Chatbot:** Backend integrates directly with **AWS
+    Bedrock** for low-latency inference.
+-   **☁️ Fully Cloud-Native:** Deployed using AWS Fargate (serverless
+    containers) with an Application Load Balancer.
+-   **📦 CI/CD Ready:** Automated Docker builds + ECS deploys via GitHub
+    Actions.
+-   **🛡️ Secure by Default:** TLS termination at ALB, CloudFront HTTPS,
+    Route 53 DNS.
+-   **📈 Globally Scalable:** CloudFront CDN + horizontally scalable
+    Fargate tasks.
+-   **🧩 Modular IaC:** Terraform split into frontend & backend stacks
+    for maintainability.
 
----
+------------------------------------------------------------------------
 
 ### **🚀 Getting Started**
 
-Follow these steps to get a copy of the project up and running on your local machine for development and testing.
+Follow these steps to run the project locally for development or
+testing.
+
+------------------------------------------------------------------------
 
 #### **Prerequisites**
 
-You will need the following installed:
+You will need:
 
-* **Go** (version 1.18 or later)
-* **Git**
-* **AWS CLI** (Configured with the necessary permissions)
-* **Docker** (Optional, but recommended for consistent environment)
+-   **Go** (1.20+ recommended)
+-   **Docker**
+-   **AWS CLI** (configured with credentials)
+-   **Terraform** (if deploying infrastructure)
+-   **Git**
 
-#### **Installation**
+------------------------------------------------------------------------
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/yourusername/your-repo-name.git](https://github.com/yourusername/your-repo-name.git)
-    cd your-repo-name
-    ```
+### **🔧 Installation**
 
-2.  **Set Environment Variables:**
-    Create a file named `.env` in the root directory and populate it with your configuration (e.g., API keys, AWS region).
+#### **1. Clone the repository**
 
-    ```
-    # Example .env content
-    CHATBOT_API_KEY=your_ai_service_key
-    AWS_REGION=us-west-2
-    ```
+``` bash
+git clone https://github.com/yourusername/your-chatbot-repo.git
+cd your-chatbot-repo
+```
 
-3.  **Run Locally (Go):**
-    ```bash
-    go run main.go
-    ```
-    The server should start on the configured port (e.g., `http://localhost:8080`).
+------------------------------------------------------------------------
 
----
+#### **2. Environment Variables**
+
+Create a `.env` file:
+
+    AWS_REGION=us-east-1
+    MODEL_ID=arn:aws:bedrock:us-east-1:949940714686:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0
+    PORT=8080
+
+------------------------------------------------------------------------
+
+#### **3. Run Locally**
+
+``` bash
+go run main.go
+```
+
+Backend should start at:
+
+    http://localhost:8080
+
+------------------------------------------------------------------------
 
 ### **⚙️ Architecture**
 
-The application uses a **microservices-like structure** leveraging Go's concurrency model. The deployment environment is centered around **AWS**.
+The system follows a modern, secure, two-tier deployment pattern on AWS.
 
+------------------------------------------------------------------------
 
+#### **📐 High-Level Architecture Diagram**
 
-#### **Core Components**
+``` mermaid
+graph TD
 
-| Component | Technology | Role |
-| :--- | :--- | :--- |
-| **Backend** | **Go (Golang)** | Core logic, API handling, and request routing. |
-| **Data Storage** | **AWS DynamoDB** | Stores conversation history and user session data. |
-| **Deployment** | **AWS ECS/EC2** | Hosts the Go application container for reliability and scaling. |
-| **API Gateway** | **AWS API Gateway** | Manages external traffic and acts as a secure entry point. |
-| **AI Integration** | *External API/Model* | Handles the heavy lifting of language processing and response generation. |
+    %% Frontend
+    subgraph Frontend_Static_Site["Frontend Static Site"]
+        A[Browser User]
+        CF[CloudFront]
+        S3[S3 Bucket React Assets]
+    end
 
----
+    %% DNS and SSL
+    subgraph Networking_DNS["AWS Networking and DNS"]
+        R53[Route 53 DNS]
+        ACM[ACM SSL Certificate]
+    end
+
+    %% Backend
+    subgraph Backend_Go_API["AWS Backend Go API Fargate"]
+        ALB[Application Load Balancer HTTPS to HTTP]
+        ECSC[ECS Fargate Service]
+        TD[ECS Task Definition]
+        ECR[ECR Repository]
+        Bedrock[AWS Bedrock]
+        VPC[VPC and Subnets]
+        CW[CloudWatch Logs]
+    end
+
+    %% Relationships
+    A -->|Access UI HTTPS| CF
+    CF --> S3
+    S3 --> A
+    
+    A -->|API Request| R53
+    R53 -->|Alias Record| ALB
+    ALB -->|Routes Traffic| ECSC
+    ECSC -->|Invoke Model| Bedrock
+    Bedrock -->|Response| A
+
+    TD --> ECR
+    ECSC --> CW
+    ECSC --> VPC
+    ACM -->|Used by| ALB
+```
+
+------------------------------------------------------------------------
+
+### **🧩 Core Components**
+
+  -------------------------------------------------------------------------------
+  Component              AWS Service                        Role
+  ---------------------- ---------------------------------- ---------------------
+  **Frontend Hosting**   S3 + CloudFront                    Serves global React
+                                                            application over
+                                                            HTTPS
+
+  **Backend Compute**    ECS Fargate                        Runs the Golang
+                                                            chatbot application
+
+  **Load Balancing**     Application Load Balancer          HTTPS termination +
+                                                            routing to Fargate
+                                                            tasks
+
+  **AI Model**           AWS Bedrock                        Handles natural
+                                                            language inference
+
+  **Container Registry** Amazon ECR                         Stores Docker images
+
+  **Network Layer**      VPC & Subnets                      Secure private
+                                                            networking
+
+  **IAM Roles**          IAM                                Grants ECS tasks
+                                                            access to Bedrock &
+                                                            CloudWatch
+
+  **DNS**                Route 53                           Routes
+                                                            `api.samlozano.com` →
+                                                            ALB
+  -------------------------------------------------------------------------------
+
+------------------------------------------------------------------------
 
 ### **📜 Usage & Endpoints**
 
-The chatbot exposes a simple **RESTful API**.
+  --------------------------------------------------------------------------
+  Method      Endpoint         Description          Example Body
+  ----------- ---------------- -------------------- ------------------------
+  **POST**    `/chat`          Sends a message to   `{"message": "Hello"}`
+                               the chatbot          
 
-| Method | Endpoint | Description | Request Body Example |
-| :--- | :--- | :--- | :--- |
-| **POST** | `/chat/` | Sends a message to the chatbot and gets a response. | `{"user_id": "123", "message": "What is Golang?"}` |
-| **GET** | `/health` | Simple health check. | *N/A* |
+  **GET**     `/health`        Health check         N/A
+  --------------------------------------------------------------------------
 
----
+------------------------------------------------------------------------
+
+### **💬 Example Request**
+
+``` bash
+curl -X POST https://api.samlozano.com/chat      -H "Content-Type: application/json"      -d '{"message": "Hello"}'
+```
+
+------------------------------------------------------------------------
+
+### **🧪 Local Testing (Docker)**
+
+``` bash
+docker run   -e MODEL_ID="arn:aws:bedrock:us-east-1:949940714686:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0"   -e AWS_PROFILE=sam   -e AWS_REGION=us-east-1   -v ~/.aws:/root/.aws:ro   -p 8080:8080   bedrock-bot:latest
+```
+
+Then:
+
+``` bash
+curl -X POST http://localhost:8080/chat      -H "Content-Type: application/json"      -d '{"message":""}'
+```
+
+------------------------------------------------------------------------
 
 ### **🤝 Contributing**
 
-We welcome contributions! Please follow these guidelines:
+1.  Fork the repo\
+2.  Create a feature branch\
+3.  Commit changes\
+4.  Push your branch\
+5.  Open a Pull Request
 
-1.  **Fork** the repository.
-2.  **Create a new branch** (`git checkout -b feature/AmazingFeature`).
-3.  **Commit** your changes (`git commit -m 'Add some AmazingFeature'`).
-4.  **Push** to the branch (`git push origin feature/AmazingFeature`).
-5.  **Open a Pull Request**.
-
----
+------------------------------------------------------------------------
 
 ### **📄 License**
 
-Distributed under the **MIT License**. See `LICENSE` for more information.
+Distributed under the **MIT License**.
 
----
+------------------------------------------------------------------------
 
 ### **📞 Contact**
 
-Your Name - [Your Email Address]
-
-Project Link: [https://github.com/yourusername/your-repo-name](https://github.com/yourusername/your-repo-name)
-curl -X POST http://localhost:8080/chat -H "Content-Type: application/json" -d '{"message":""}'
-
-### **Local Testing**
-```
-docker run -e MODEL_ID="arn:aws:bedrock:us-east-1:949940714686:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0" -e AWS_PROFILE=sam -e AWS_REGION=us-east-1 -v ~/.aws:/root/.aws:ro -p 8080:8080 bedrock-bot:latest
-```
-```
-curl -X POST http://localhost:8080/chat -H "Content-Type: application/json" -d '{"message":""}'
-```
+Sam Lozano\
+Project Link: https://github.com/yourusername/your-chatbot-repo
