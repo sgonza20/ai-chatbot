@@ -19,8 +19,8 @@ env:
   ECS_CONTAINER_NAME: golang-chatbot-container
   ECR_REPO_NAME: golang-chatbot-repo
   AWS_ROLE_ARN: arn:aws:iam::949940714686:role/github-actions-cicd
-  SCAN_PATH: "./terraform"
-  POLICY: "Default vulnerabilities policy"
+  SCAN_PATH: "."
+  POLICY: "samlozano-SAST-CLI,samlozano-iac-CLI,samlozano-vuln-CLI"
 
 jobs:
   terraform_deploy:
@@ -62,7 +62,7 @@ jobs:
 
       - name: Run wiz CLI Scan
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: ./wizcli dir scan --path $SCAN_PATH --policy "$POLICY"
+        run: ./wizcli scan dir --path $SCAN_PATH --policy "$POLICY"
 
       - name: Trigger Terraform Run (Plan or Apply)
         uses: kvrhdn/tfe-run@v1
