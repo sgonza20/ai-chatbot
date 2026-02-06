@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -207,6 +208,8 @@ func extractAssistantText(parsed map[string]interface{}) string {
 			}
 		}
 	}
+
+	fmt.Println("HEllo World")
 
 	return ""
 }
