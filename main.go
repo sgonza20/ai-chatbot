@@ -209,7 +209,7 @@ func extractAssistantText(parsed map[string]interface{}) string {
 		}
 	}
 
-	fmt.Println("HEllo World")
+	fmt.Println("HEllo Worldd")
 
 	return ""
 }
