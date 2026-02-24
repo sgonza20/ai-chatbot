@@ -50,11 +50,11 @@ jobs:
       #     terraform_version: 1.10.0
 
       - name: Download Wiz CLI
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: curl -o wizcli https://downloads.wiz.io/v1/wizcli/latest/wizcli-linux-amd64 && chmod +x wizcli
 
       - name: Run wiz CLI Scan
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: ./wizcli scan dir --path $SCAN_PATH --policy "$POLICY"
         env:
           WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
