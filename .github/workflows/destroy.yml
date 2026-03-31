@@ -31,10 +31,13 @@ jobs:
             with:
               terraform_version: ${{ env.TERRAFORM_VERSION }}
 
-          - name: Terraform Init
-            run: terraform init
-            working-directory: ./terraform
-
-          - name: Terraform Destroy
-            run: terraform destroy -auto-approve
-            working-directory: ./terraform
+          - name: Trigger Terraform Run (Destroy)
+            uses: kvrhdn/tfe-run@v1
+            with:
+              token: ${{ secrets.TF_API_TOKEN }}
+              organization: samlozano
+              workspace: test-workspace
+              message: "Destroy run triggered by GitHub Actions"
+              # Change the type to 'destroy'
+              type: destroy
+              terraform_root: ./terraform
