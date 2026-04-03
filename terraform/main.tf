@@ -1,3 +1,11 @@
+# Data source to get current region for AZs
+data "aws_region" "current" {}
+
+# Get the latest ECS-optimized AMI for Amazon Linux 2
+data "aws_ssm_parameter" "ecs_optimized_ami" {
+  name = "/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id"
+}
+
 # Define a standard /16 VPC
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
@@ -51,19 +59,19 @@ resource "aws_internet_gateway" "gw" {
   }
 }
 
-# Public Subnet 1 (us-west-2a, for example)
+# Public Subnet 1
 resource "aws_subnet" "public_a" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.1.0/24"
   availability_zone = "${data.aws_region.current.name}a"
-  map_public_ip_on_launch = true # Fargate needs a public IP for internet access
+  map_public_ip_on_launch = true 
 
   tags = {
     Name = "golang-chatbot-public-a"
   }
 }
 
-# Public Subnet 2 (us-west-2b, for example)
+# Public Subnet 2
 resource "aws_subnet" "public_b" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.2.0/24"
@@ -75,7 +83,7 @@ resource "aws_subnet" "public_b" {
   }
 }
 
-# Route Table for Public Subnets (directs traffic to IGW)
+# Route Table for Public Subnets
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -85,7 +93,6 @@ resource "aws_route_table" "public" {
   }
 }
 
-# Associate Route Table with Subnets
 resource "aws_route_table_association" "public_a" {
   subnet_id      = aws_subnet.public_a.id
   route_table_id = aws_route_table.public.id
@@ -96,10 +103,7 @@ resource "aws_route_table_association" "public_b" {
   route_table_id = aws_route_table.public.id
 }
 
-# Data source to get current region for AZs
-data "aws_region" "current" {}
-
-# IAM Policy Document for the Task Execution Role trust relationship
+# IAM Policy Document for the Task Execution Role
 data "aws_iam_policy_document" "ecs_assume_role_policy" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -116,18 +120,39 @@ resource "aws_iam_role" "ecs_execution_role" {
   assume_role_policy = data.aws_iam_policy_document.ecs_assume_role_policy.json
 }
 
-# Attach the standard AWS-managed policy for task execution
 resource "aws_iam_role_policy_attachment" "ecs_execution_role_attach" {
   role       = aws_iam_role.ecs_execution_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# --- ALB SECURITY GROUP (Allows HTTPS from the internet) ---
+# --- NEW: IAM ROLE FOR EC2 INSTANCES ---
+resource "aws_iam_role" "ecs_node_role" {
+  name = "golang-chatbot-ecs-node-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_node_role_attach" {
+  role       = aws_iam_role.ecs_node_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+}
+
+resource "aws_iam_instance_profile" "ecs_node_profile" {
+  name = "golang-chatbot-ecs-node-profile"
+  role = aws_iam_role.ecs_node_role.name
+}
+
+# --- ALB SECURITY GROUP ---
 resource "aws_security_group" "alb_sg" {
   vpc_id = aws_vpc.main.id
   name   = "golang-chatbot-alb-sg"
 
-  # Ingress rule: Allow HTTPS traffic from anywhere
   ingress {
     from_port   = 443
     to_port     = 443
@@ -143,21 +168,19 @@ resource "aws_security_group" "alb_sg" {
   }
 }
 
-# --- TASK SECURITY GROUP (Allows traffic ONLY from the ALB) ---
+# --- TASK/NODE SECURITY GROUP ---
 resource "aws_security_group" "allow_http" {
   vpc_id = aws_vpc.main.id
   name   = "golang-chatbot-sg"
   description = "Allow inbound traffic from ALB only"
 
-  # Inbound rule: Allow TCP traffic on port 8080 (Go app port) from the ALB Security Group
   ingress {
-    from_port       = 8080
-    to_port         = 8080
+    from_port       = 0
+    to_port         = 65535 # Allow all ports from ALB for EC2 bridge/host modes
     protocol        = "tcp"
     security_groups = [aws_security_group.alb_sg.id]
   }
 
-  # Outbound rule: Allow all outbound traffic (Fargate needs this for Bedrock/ECR)
   egress {
     from_port   = 0
     to_port     = 0
@@ -166,7 +189,7 @@ resource "aws_security_group" "allow_http" {
   }
 }
 
-# --- APPLICATION LOAD BALANCER (ALB) ---
+# --- ALB ---
 resource "aws_lb" "chatbot_alb" {
   name               = "golang-chatbot-alb"
   internal           = false
@@ -180,13 +203,12 @@ resource "aws_lb" "chatbot_alb" {
   }
 }
 
-# --- ALB TARGET GROUP (Routes traffic to ECS tasks) ---
 resource "aws_lb_target_group" "chatbot_tg" {
   name        = "golang-chatbot-tg"
   port        = 8080 
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
-  target_type = "ip"
+  target_type = "ip" # Keep "ip" because task is using awsvpc network mode
 
   health_check {
     path                = "/health" 
@@ -199,7 +221,6 @@ resource "aws_lb_target_group" "chatbot_tg" {
   }
 }
 
-# --- ALB LISTENER (Handles HTTPS traffic) ---
 resource "aws_lb_listener" "https_listener" {
   load_balancer_arn = aws_lb.chatbot_alb.arn
   port              = 443
@@ -212,7 +233,7 @@ resource "aws_lb_listener" "https_listener" {
   }
 }
 
-# 1. ECR Repository
+# ECR Repository
 resource "aws_ecr_repository" "chatbot_repo" {
   name                 = "golang-chatbot-repo"
   image_tag_mutability = "MUTABLE"
@@ -223,15 +244,52 @@ resource "aws_ecr_repository" "chatbot_repo" {
   }
 }
 
-# 2. ECS Cluster
+# --- ECS CLUSTER ---
 resource "aws_ecs_cluster" "chatbot_cluster" {
   name = "golang-chatbot-cluster"
 }
 
-# 3. ECS Task Definition
+# --- NEW: EC2 AUTO SCALING GROUP ---
+resource "aws_launch_template" "ecs_lt" {
+  name_prefix   = "ecs-template"
+  image_id      = data.aws_ssm_parameter.ecs_optimized_ami.value
+  instance_type = "t3.micro"
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ecs_node_profile.name
+  }
+
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [aws_security_group.allow_http.id]
+  }
+
+  # This identifies which cluster the instance should join
+  user_data = base64encode("#!/bin/bash\necho ECS_CLUSTER=${aws_ecs_cluster.chatbot_cluster.name} >> /etc/ecs/ecs.config")
+}
+
+resource "aws_autoscaling_group" "ecs_asg" {
+  vpc_zone_identifier = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+  desired_capacity    = 1
+  max_size            = 2
+  min_size            = 1
+
+  launch_template {
+    id      = aws_launch_template.ecs_lt.id
+    version = "$Latest"
+  }
+
+  tag {
+    key                 = "AmazonECSManaged"
+    value               = true
+    propagate_at_launch = true
+  }
+}
+
+# --- ECS TASK DEFINITION (Modified for EC2) ---
 resource "aws_ecs_task_definition" "chatbot_task" {
   family                   = "golang-chatbot-task"
-  requires_compatibilities = ["FARGATE"]
+  requires_compatibilities = ["EC2"] # CHANGED
   network_mode             = "awsvpc"
   cpu                      = 256
   memory                   = 512
@@ -240,7 +298,7 @@ resource "aws_ecs_task_definition" "chatbot_task" {
   container_definitions = jsonencode([
     {
       name      = "golang-chatbot-container"
-      image     = "${aws_ecr_repository.chatbot_repo.repository_url}:latest" # Initial placeholder
+      image     = "${aws_ecr_repository.chatbot_repo.repository_url}:latest"
       cpu       = 256
       memory    = 512
       essential = true
@@ -272,75 +330,60 @@ resource "aws_ecs_task_definition" "chatbot_task" {
   ])
 }
 
-# 4. ECS Service (Fargate) - Now attached to the ALB
+# --- ECS SERVICE (Modified for EC2) ---
 resource "aws_ecs_service" "chatbot_service" {
   name            = "golang-chatbot-service"
   cluster         = aws_ecs_cluster.chatbot_cluster.id
   task_definition = aws_ecs_task_definition.chatbot_task.arn
   desired_count   = 1
-  launch_type     = "FARGATE"
+  launch_type     = "EC2" # CHANGED
   
-  # New block to integrate with the Load Balancer
   load_balancer {
-    target_group_arn = aws_lb_target_group.chatbot_tg.arn # Reference the new Target Group
+    target_group_arn = aws_lb_target_group.chatbot_tg.arn
     container_name   = "golang-chatbot-container" 
     container_port   = 8080                       
   }
 
   network_configuration {
     subnets          = [aws_subnet.public_a.id, aws_subnet.public_b.id]
-    # Use the security group that restricts traffic to ALB only
     security_groups  = [aws_security_group.allow_http.id] 
-    assign_public_ip = true
+    assign_public_ip = false # Not required for EC2 tasks; the host has the IP
   }
 }
 
-# IAM Role for ECS Task (application permissions)
+# IAM Role for ECS Task
 resource "aws_iam_role" "ecs_task_role" {
   name = "golang-chatbot-task-role"
-
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
-    Statement = [
-      {
-        Effect = "Allow",
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        },
-        Action = "sts:AssumeRole"
-      }
-    ]
+    Statement = [{
+      Effect = "Allow",
+      Principal = { Service = "ecs-tasks.amazonaws.com" },
+      Action = "sts:AssumeRole"
+    }]
   })
 }
 
-# Policy: Allow calling Bedrock models
 resource "aws_iam_role_policy" "ecs_task_policy" {
   name = "golang-chatbot-task-policy"
   role = aws_iam_role.ecs_task_role.id
-
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
       {
         Effect = "Allow",
-        Action = [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream"
-        ],
+        Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
         Resource = "*"
       },
       {
         Effect = "Allow",
-        Action = [
-          "sts:AssumeRole"
-        ],
+        Action = ["sts:AssumeRole"],
         Resource = "*"
       }
     ]
   })
 }
 
-#--- ALB DNS Name Output ---
 output "alb_dns_name" {
   description = "The DNS name of the Application Load Balancer"
   value       = aws_lb.chatbot_alb.dns_name
