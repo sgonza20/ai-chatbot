@@ -49,10 +49,15 @@ jobs:
         with:
           terraform_version: 1.10.0
 
+      - name: Login to Amazon ECR
+        id: login-ecr
+        # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Build Docker image
         # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          docker build -t my-app-image:code2cloud1 .
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/$ECR_REPO_NAME:code2cloud1 .
 
       - name: Download Wiz CLI
         # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -60,14 +65,25 @@ jobs:
 
       - name: Run wiz CLI Scan
         # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: ./wizcli scan container-image my-app-image:code2cloud1 --client-id $WIZ_CLIENT_ID --client-secret $WIZ_CLIENT_SECRET
+        run: ./wizcli scan ${{ steps.login-ecr.outputs.registry }}/$ECR_REPO_NAME:code2cloud1--client-id $WIZ_CLIENT_ID --client-secret $WIZ_CLIENT_SECRET
         env:
           WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
 
-      - name: Run wiz CLI Scan
+      - name: Build, tag, and push image to Amazon ECR
         # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: ./wizcli tag my-app-image:code2cloud1 --client-id $WIZ_CLIENT_ID --client-secret $WIZ_CLIENT_SECRET
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }} 
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPO_NAME:code2cloud1
+          echo "Pushing $IMAGE_URI"
+          docker push $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV # Store URI for next step
+
+      - name: Tag Image
+        # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: ./wizcli tag ${{ steps.login-ecr.outputs.registry }}/$ECR_REPO_NAME:code2cloud1 --client-id $WIZ_CLIENT_ID --client-secret $WIZ_CLIENT_SECRET
         env:
           WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
