@@ -66,7 +66,7 @@ jobs:
 
       - name: Run wiz CLI Scan
         # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: ./wizcli scan dir . --name "${{ github.repository }}" --client-id $WIZ_CLIENT_ID --client-secret $WIZ_CLIENT_SECRET
+        run: ./wizcli scan dir . --name "${{ github.repository }}" --tags "repo=${{ github.repository }},branch=${{ github.ref_name }}" --client-id $WIZ_CLIENT_ID --client-secret $WIZ_CLIENT_SECRET
         env:
           WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
