@@ -17,7 +17,7 @@ variable "alb_cert_arn" {
 
 resource "aws_cloudwatch_log_group" "chatbot" {
   name              = "/ecs/golang-chatbot"
-  retention_in_days = 7
+  retention_in_days = 0
 }
 
 resource "aws_iam_policy" "cw_logs_policy" {
@@ -56,7 +56,7 @@ resource "aws_subnet" "public_a" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.1.0/24"
   availability_zone = "${data.aws_region.current.name}a"
-  map_public_ip_on_launch = true # Fargate needs a public IP for internet access
+  map_public_ip_on_launch = false # Fargate needs a public IP for internet access
 
   tags = {
     Name = "golang-chatbot-public-a"
@@ -68,7 +68,7 @@ resource "aws_subnet" "public_b" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.2.0/24"
   availability_zone = "${data.aws_region.current.name}b"
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false
 
   tags = {
     Name = "golang-chatbot-public-b"
@@ -173,7 +173,7 @@ resource "aws_lb" "chatbot_alb" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]
   subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id] 
-  enable_deletion_protection = false
+  enable_deletion_protection = true
 
   tags = {
     Name = "GolangChatbotALB"
@@ -184,7 +184,7 @@ resource "aws_lb" "chatbot_alb" {
 resource "aws_lb_target_group" "chatbot_tg" {
   name        = "golang-chatbot-tg"
   port        = 8080 
-  protocol    = "HTTP"
+  protocol    = "HTTPS"
   vpc_id      = aws_vpc.main.id
   target_type = "ip"
 
@@ -215,7 +215,7 @@ resource "aws_lb_listener" "https_listener" {
 # 1. ECR Repository
 resource "aws_ecr_repository" "chatbot_repo" {
   name                 = "golang-chatbot-repo"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
   force_delete = true
 
   image_scanning_configuration {
@@ -291,7 +291,7 @@ resource "aws_ecs_service" "chatbot_service" {
     subnets          = [aws_subnet.public_a.id, aws_subnet.public_b.id]
     # Use the security group that restricts traffic to ALB only
     security_groups  = [aws_security_group.allow_http.id] 
-    assign_public_ip = true
+    assign_public_ip = false
   }
 }
 
